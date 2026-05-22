@@ -274,32 +274,27 @@ app.add_middleware(
 
 @app.post("/api/auth/register", response_model=Token)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    try:
-        if db.query(User).filter(User.email == user_data.email).first():
-            raise HTTPException(status_code=400, detail="Email allaqachon mavjud")
-        if db.query(User).filter(User.username == user_data.username).first():
-            raise HTTPException(status_code=400, detail="Username allaqachon mavjud")
-        
-        user = User(
-            username=user_data.username,
-            email=user_data.email,
-            full_name=user_data.full_name,
-            hashed_password=get_password_hash(user_data.password),
-            role="admin",
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-        access_token = create_access_token({"sub": user.id})
-        return Token(access_token=access_token)
+    # Parolni 72 baytga cheklash
+    password = user_data.password[:72]
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logging.error(f"Register xatosi: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Server xatosi: {str(e)}")
+    if db.query(User).filter(User.email == user_data.email).first():
+        raise HTTPException(status_code=400, detail="Email allaqachon mavjud")
+    if db.query(User).filter(User.username == user_data.username).first():
+        raise HTTPException(status_code=400, detail="Username allaqachon mavjud")
+    
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        full_name=user_data.full_name,
+        hashed_password=get_password_hash(password),  # password[:72]
+        role="admin",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    access_token = create_access_token({"sub": user.id})
+    return Token(access_token=access_token)
 
 @app.get("/api/auth/me")
 def get_me(current_user: User = Depends(get_current_user)):
