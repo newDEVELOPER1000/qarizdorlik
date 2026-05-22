@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Annotated
 from contextlib import asynccontextmanager
-
+from passlib.context import CryptContext
 # FastAPI va Dependencies
 from fastapi import (
     FastAPI, Depends, HTTPException, status, Request, Form,
@@ -274,40 +274,32 @@ app.add_middleware(
 
 @app.post("/api/auth/register", response_model=Token)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Check existing
-    if db.query(User).filter(User.email == user_data.email).first():
-        raise HTTPException(status_code=400, detail="Email already exists")
-    if db.query(User).filter(User.username == user_data.username).first():
-        raise HTTPException(status_code=400, detail="Username already exists")
+    try:
+        if db.query(User).filter(User.email == user_data.email).first():
+            raise HTTPException(status_code=400, detail="Email allaqachon mavjud")
+        if db.query(User).filter(User.username == user_data.username).first():
+            raise HTTPException(status_code=400, detail="Username allaqachon mavjud")
+        
+        user = User(
+            username=user_data.username,
+            email=user_data.email,
+            full_name=user_data.full_name,
+            hashed_password=get_password_hash(user_data.password),
+            role="admin",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        access_token = create_access_token({"sub": user.id})
+        return Token(access_token=access_token)
     
-    # Create user
-    user = User(
-        username=user_data.username,
-        email=user_data.email,
-        full_name=user_data.full_name,
-        hashed_password=get_password_hash(user_data.password),
-        role="admin",  # First user is admin
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    # Create token
-    access_token = create_access_token({"sub": user.id})
-    return Token(access_token=access_token)
-
-@app.post("/api/auth/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == form_data.username).first()
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not user.is_active:
-        raise HTTPException(status_code=401, detail="User is inactive")
-    
-    access_token = create_access_token({"sub": user.id})
-    return Token(access_token=access_token)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Register xatosi: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Server xatosi: {str(e)}")
 
 @app.get("/api/auth/me")
 def get_me(current_user: User = Depends(get_current_user)):
@@ -406,7 +398,7 @@ def create_debt(
     db.add(debt)
     
     # Update customer stats
-    customer.total_debt += debt_data.amount
+    customer.total_debt = float(customer.total_debt or 0) + debt_data.amount
     customer.remaining_debt += debt_data.amount
     
     db.commit()
